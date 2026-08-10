@@ -9,6 +9,7 @@ from .errors import bad_request, forbidden, not_found, conflict
 from .audit import log
 from .routes_auth import public_user
 from . import compliance as comp
+from . import mailer
 
 router = Router()
 
@@ -16,6 +17,25 @@ router = Router()
 def gen_temp_password():
     alphabet = string.ascii_letters + string.digits
     return "".join(secrets.choice(alphabet) for _ in range(12))
+
+
+def _email_temp_password(ctx, row, temp_password, is_new_account):
+    """Best-effort: email a freshly generated temp password to the account it belongs to.
+    Returns whether it actually went out, so the caller can still show it on screen as a
+    fallback when email isn't configured or the send fails - nothing here is allowed to
+    block the reset/invite itself."""
+    to_addr = mailer.notify_address(row)
+    if not to_addr:
+        return False
+    if is_new_account:
+        subject = "Your Lighthouse Therapy Hub account"
+        intro = "An account was created for you on Lighthouse Therapy Hub."
+    else:
+        subject = "Your Lighthouse Therapy Hub password was reset"
+        intro = "Your Lighthouse Therapy Hub password was reset by a clinic administrator."
+    body = (f"{intro}\n\nTemporary password: {temp_password}\n\n"
+            f"Sign in with this password, then set your own from My Account.")
+    return mailer.send_email(ctx.db, to_addr, subject, body)
 
 
 # ---------------------------------------------------------------- users ----
@@ -65,6 +85,7 @@ def create_user(ctx, params, body):
     row = ctx.db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
     resp = public_user(row)
     resp["temporary_password"] = temp_password  # shown once, invite-only account provisioning
+    resp["temp_password_emailed"] = _email_temp_password(ctx, row, temp_password, is_new_account=True)
     return 201, {"user": resp}
 
 
@@ -212,7 +233,8 @@ def reset_password(ctx, params, body):
     ctx.db.execute("DELETE FROM sessions_auth WHERE user_id=?", (uid,))
     log(ctx.db, ctx.user_id, "user_password_reset", "user", uid)
     ctx.db.commit()
-    return 200, {"temporary_password": temp_password}
+    emailed = _email_temp_password(ctx, row, temp_password, is_new_account=False)
+    return 200, {"temporary_password": temp_password, "temp_password_emailed": emailed}
 
 
 @router.post("/api/auth/me/notify-email")
@@ -228,6 +250,7 @@ def update_notify_email(ctx, params, body):
     ctx.db.commit()
     row = ctx.db.execute("SELECT * FROM users WHERE id=?", (ctx.user_id,)).fetchone()
     return 200, {"user": public_user(row)}
+
 
 @router.post("/api/auth/me/change-email")
 def change_email(ctx, params, body):
@@ -253,6 +276,8 @@ def change_email(ctx, params, body):
     ctx.db.commit()
     row = ctx.db.execute("SELECT * FROM users WHERE id=?", (ctx.user_id,)).fetchone()
     return 200, {"user": public_user(row)}
+
+
 @router.post("/api/auth/change-password")
 def change_password(ctx, params, body):
     from .security import verify_password as vp
