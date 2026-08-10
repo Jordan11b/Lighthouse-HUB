@@ -120,6 +120,82 @@ def reactivate_user(ctx, params, body):
     return 200, {"ok": True}
 
 
+@router.delete("/api/users/<id>")
+def delete_user(ctx, params, body):
+    """Permanently erase a user account - unlike deactivate, the row is actually gone. Only
+    allowed when the account has no real service history that would be lost: no student
+    currently assigned to them, no attendance they recorded, no sessions scheduled under
+    them, no makeup-queue entries, no pending approval request, and (for SLPs) nobody still
+    reporting to them. Anyone with real history is blocked with a message pointing to
+    Deactivate instead - transfer their caseload first if they still have active students.
+    Incidental metadata (login sessions, notification log entries, coverage grants,
+    transfers, proposed-but-inactive recurring schedules, audit trail as the actor) is
+    cleaned up automatically so it doesn't get in the way with a foreign-key error."""
+    ctx.require_role("admin")
+    uid = int(params["id"])
+    row = ctx.db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+    if not row:
+        raise not_found()
+
+    if row["role"] == "admin":
+        active_admins = ctx.db.execute(
+            "SELECT COUNT(*) c FROM users WHERE role='admin' AND is_active=1"
+        ).fetchone()["c"]
+        if active_admins <= 1 and row["is_active"]:
+            raise forbidden("The final active administrator cannot be deleted")
+
+    def count(q, *args):
+        return ctx.db.execute(q, args).fetchone()["c"]
+
+    blockers = []
+    if count("SELECT COUNT(*) c FROM students WHERE provider_id=? OR supervising_slp_id=?", uid, uid):
+        blockers.append("still assigned to a student record")
+    if count("SELECT COUNT(*) c FROM attendance WHERE recorded_by=?", uid):
+        blockers.append("has recorded attendance")
+    if count("SELECT COUNT(*) c FROM sessions_sched WHERE provider_id=?", uid):
+        blockers.append("has scheduled session(s)")
+    if count("SELECT COUNT(*) c FROM attendance_corrections WHERE changed_by=?", uid):
+        blockers.append("has attendance correction history")
+    if count("SELECT COUNT(*) c FROM makeup_queue WHERE original_provider_id=? OR responsible_provider_id=?", uid, uid):
+        blockers.append("has makeup-queue history")
+    if count("SELECT COUNT(*) c FROM approvals WHERE requested_by=? AND status='pending'", uid):
+        blockers.append("has a pending approval request")
+    if count("SELECT COUNT(*) c FROM users WHERE supervising_slp_id=?", uid):
+        blockers.append("still supervises other staff")
+
+    if blockers:
+        raise conflict(
+            f"Can't permanently delete {row['name']} - this account has real history "
+            f"({'; '.join(blockers)}). Deactivate it instead (transfer their caseload first "
+            f"if they still have active students) to keep the record intact."
+        )
+
+    # No real service history left - safe to fully remove. Clear incidental references first
+    # so the final delete doesn't trip a foreign-key constraint.
+    ctx.db.execute("DELETE FROM sessions_auth WHERE user_id=?", (uid,))
+    ctx.db.execute("DELETE FROM notification_log WHERE recipient_user_id=?", (uid,))
+    ctx.db.execute("DELETE FROM audit_log WHERE actor_id=?", (uid,))
+    ctx.db.execute("UPDATE approvals SET decided_by=NULL WHERE decided_by=?", (uid,))
+    ctx.db.execute("DELETE FROM recurring_schedules WHERE provider_id=? OR proposed_by=?", (uid, uid))
+    ctx.db.execute(
+        "DELETE FROM temporary_coverage WHERE covering_provider_id=? OR original_provider_id=? OR authorized_by=?",
+        (uid, uid, uid),
+    )
+    ctx.db.execute(
+        "DELETE FROM student_transfers WHERE from_provider_id=? OR to_provider_id=? OR requested_by=?",
+        (uid, uid, uid),
+    )
+    ctx.db.execute("UPDATE target_adjustments SET created_by=NULL WHERE created_by=?", (uid,))
+    ctx.db.execute("UPDATE import_batches SET uploaded_by=NULL WHERE uploaded_by=?", (uid,))
+    ctx.db.execute("UPDATE import_batches SET decided_by=NULL WHERE decided_by=?", (uid,))
+
+    name, email, role = row["name"], row["email"], row["role"]
+    ctx.db.execute("DELETE FROM users WHERE id=?", (uid,))
+    log(ctx.db, ctx.user_id, "user_deleted", "user", uid, {"name": name, "email": email, "role": role})
+    ctx.db.commit()
+    return 200, {"ok": True}
+
+
 @router.post("/api/users/<id>/reset-password")
 def reset_password(ctx, params, body):
     ctx.require_role("admin")
