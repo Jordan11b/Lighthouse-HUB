@@ -20,6 +20,16 @@ export async function renderAccount(content) {
         </form>
       </div>
       <div class="card">
+        <h3>Change login email</h3>
+        <p class="small">This is the address you sign in with. Changing it takes effect immediately — use the
+        new address next time you log in.</p>
+        <form id="email-form">
+          <div class="field"><label>Current password</label><input type="password" name="current_password" required></div>
+          <div class="field"><label>New login email</label><input type="email" name="new_email" required></div>
+          <button class="btn btn-primary" type="submit">Update email</button>
+        </form>
+      </div>
+      <div class="card">
         <h3>Notification email</h3>
         <p class="small">Where sign-in codes and alerts go, if you'd rather receive them somewhere other than
         your login email (${CURRENT_USER.email}). Leave blank to use your login email.</p>
@@ -36,6 +46,15 @@ export async function renderAccount(content) {
       await api.post("/api/auth/change-password", qs(e.target));
       toast("Password updated.");
       e.target.reset();
+    } catch (err) { toast(err.message, true); }
+  });
+  content.querySelector("#email-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      const resp = await api.post("/api/auth/me/change-email", qs(e.target));
+      CURRENT_USER.email = resp.user.email;
+      toast("Login email updated. Use it next time you sign in.");
+      renderAccount(content);
     } catch (err) { toast(err.message, true); }
   });
   content.querySelector("#notify-form").addEventListener("submit", async (e) => {
