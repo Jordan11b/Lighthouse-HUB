@@ -1,0 +1,16 @@
+# Optional shortcut: Render's "New Blueprint" flow can read this file and set up
+# the web service, port, and persistent disk automatically. If you'd rather not
+# use it, the README has manual dashboard steps that do the same thing.
+services:
+  - type: web
+    name: lighthouse-therapy-hub
+    runtime: python
+    plan: starter
+    startCommand: python3 server.py
+    envVars:
+      - key: LIGHTHOUSE_DATA_DIR
+        value: /data
+    disk:
+      name: lighthouse-data
+      mountPath: /data
+      sizeGB: 1
