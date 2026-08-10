@@ -291,8 +291,10 @@ def _migrate(conn):
         conn.execute("ALTER TABLE sessions_auth ADD COLUMN mfa_attempts INTEGER NOT NULL DEFAULT 0")
 
     user_cols = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
-    if "notify_email" not in user_cols:
+   if "notify_email" not in user_cols:
         conn.execute("ALTER TABLE users ADD COLUMN notify_email TEXT")
+    if "is_supervising_slp" not in user_cols:
+        conn.execute("ALTER TABLE users ADD COLUMN is_supervising_slp INTEGER NOT NULL DEFAULT 0")
 
 
 def init_db():
