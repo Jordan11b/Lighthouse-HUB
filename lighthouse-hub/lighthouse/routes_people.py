@@ -229,7 +229,30 @@ def update_notify_email(ctx, params, body):
     row = ctx.db.execute("SELECT * FROM users WHERE id=?", (ctx.user_id,)).fetchone()
     return 200, {"user": public_user(row)}
 
-
+@router.post("/api/auth/me/change-email")
+def change_email(ctx, params, body):
+    """Self-service: change the email address used to log in (and, unless a separate
+    notification email is set, where MFA codes and alerts go). Requires the current
+    password as confirmation, same as changing the password."""
+    from .security import verify_password as vp
+    if not ctx.user:
+        raise forbidden()
+    current_password = body.get("current_password") or ""
+    new_email = (body.get("new_email") or "").strip().lower()
+    if not new_email or "@" not in new_email:
+        raise bad_request("Enter a valid email address")
+    if not vp(current_password, ctx.user["password_hash"], ctx.user["password_salt"]):
+        raise forbidden("Current password is incorrect")
+    exists = ctx.db.execute(
+        "SELECT id FROM users WHERE lower(email)=? AND id<>?", (new_email, ctx.user_id)
+    ).fetchone()
+    if exists:
+        raise conflict("Another account already uses that email")
+    ctx.db.execute("UPDATE users SET email=? WHERE id=?", (new_email, ctx.user_id))
+    log(ctx.db, ctx.user_id, "email_changed", "user", ctx.user_id, {"new_email": new_email})
+    ctx.db.commit()
+    row = ctx.db.execute("SELECT * FROM users WHERE id=?", (ctx.user_id,)).fetchone()
+    return 200, {"user": public_user(row)}
 @router.post("/api/auth/change-password")
 def change_password(ctx, params, body):
     from .security import verify_password as vp
