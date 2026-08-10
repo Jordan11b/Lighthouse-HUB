@@ -81,6 +81,8 @@ def _build_preview(ctx, headers, rows):
         (r["name"].strip().lower(), r["school_id"])
         for r in ctx.db.execute("SELECT name, school_id FROM students").fetchall()
     }
+    seen_ext_ids_in_file = set()
+    seen_name_school_in_file = set()
 
     preview_rows = []
     for i, row in enumerate(rows):
@@ -121,6 +123,22 @@ def _build_preview(ctx, headers, rows):
         elif name and school_id and (name.strip().lower(), school_id) in existing_name_school:
             is_duplicate = True
             flags.append("Possible duplicate (matches an existing name at this school)")
+
+        # Catch duplicates *within this same file* too (e.g. the same student listed twice
+        # by mistake) - the checks above only compare against students already saved in the
+        # database, so two identical rows in one upload would otherwise both sail through.
+        ext_key = ext_id.strip().lower() if ext_id else None
+        name_school_key = (name.strip().lower(), school_id) if (name and school_id) else None
+        if ext_key and ext_key in seen_ext_ids_in_file:
+            is_duplicate = True
+            flags.append("Duplicate row within this file (same student ID appears more than once)")
+        elif name_school_key and name_school_key in seen_name_school_in_file:
+            is_duplicate = True
+            flags.append("Duplicate row within this file (same name/school appears more than once)")
+        if ext_key:
+            seen_ext_ids_in_file.add(ext_key)
+        if name_school_key:
+            seen_name_school_in_file.add(name_school_key)
 
         freq_raw = get("sessions_per_week")
         try:
