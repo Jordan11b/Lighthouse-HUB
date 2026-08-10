@@ -8,9 +8,19 @@ export async function renderProviders(content) {
     api.get("/api/users"), api.get("/api/students"), api.get("/api/coverage"),
   ]);
   const providers = users.filter(u => u.role === "provider");
-  const slps = users.filter(u => u.role === "supervising_slp");
+  // An admin can also act as a clinical supervising SLP (e.g. an owner who both runs the
+  // clinic and carries a caseload of supervision) - that's the is_supervising_slp flag,
+  // separate from their role. Anyone who counts as a supervising SLP - either by role or by
+  // that flag - shows up here so they're selectable as who a provider reports to.
+  const slps = users.filter(u => u.role === "supervising_slp" || (u.role === "admin" && u.is_supervising_slp));
+  const admins = users.filter(u => u.role === "admin");
   const caseload = (id) => students.filter(s => s.provider_id === id && s.status === "active").length;
   const slpName = (id) => (slps.find(x => x.id === id) || {}).name || "—";
+  const roleLabel = (u) => {
+    if (u.role === "provider") return "Provider";
+    if (u.role === "admin") return u.is_supervising_slp ? "Administrator + Supervising SLP" : "Administrator";
+    return "Supervising SLP";
+  };
 
   content.innerHTML = `
     <div class="toolbar">
@@ -24,23 +34,45 @@ export async function renderProviders(content) {
           ${[...providers, ...slps].map(u => `
             <tr>
               <td>${u.name}<div class="small">${u.email}</div></td>
-              <td>${u.role === "provider" ? "Provider" : "Supervising SLP"}</td>
+              <td>${roleLabel(u)}</td>
               <td>${u.credentials || "—"}</td>
               <td>${fmtDate(u.license_expiration)}</td>
               <td>${u.role === "provider" ? slpName(u.supervising_slp_id) : "—"}</td>
               <td>${u.role === "provider" ? caseload(u.id) : "—"}</td>
               <td>${u.is_active ? "Active" : "Inactive"}</td>
               ${isAdmin ? `<td>
-                <button class="btn btn-outline btn-sm" data-reset="${u.id}">Reset password</button>
-                <button class="btn btn-outline btn-sm" data-toggle="${u.id}" data-active="${u.is_active}">${u.is_active ? "Deactivate" : "Reactivate"}</button>
-                ${u.role === "provider" && caseload(u.id) > 0 ? `<button class="btn btn-outline btn-sm" data-bulk-transfer="${u.id}">Transfer caseload</button>` : ""}
-                <button class="btn btn-outline btn-sm btn-danger" data-delete="${u.id}" data-name="${u.name}">Delete permanently</button>
+                <button class="btn btn-outline btn-sm" data-edit="${u.id}">Edit</button>
+                ${u.role === "admin" ? `<span class="small">Password/status managed via My Account</span>` : `
+                  <button class="btn btn-outline btn-sm" data-reset="${u.id}">Reset password</button>
+                  <button class="btn btn-outline btn-sm" data-toggle="${u.id}" data-active="${u.is_active}">${u.is_active ? "Deactivate" : "Reactivate"}</button>
+                  ${u.role === "provider" && caseload(u.id) > 0 ? `<button class="btn btn-outline btn-sm" data-bulk-transfer="${u.id}">Transfer caseload</button>` : ""}
+                  <button class="btn btn-outline btn-sm btn-danger" data-delete="${u.id}" data-name="${u.name}">Delete permanently</button>
+                `}
               </td>` : ""}
             </tr>
           `).join("") || `<tr><td colspan="8" class="empty">No staff yet.</td></tr>`}
         </tbody>
       </table>
     </div>
+
+    ${isAdmin ? `
+    <div class="section-title"><h3>Administrators</h3></div>
+    <p class="small">Administrators aren't listed above unless they're also flagged as a supervising SLP. Use Edit to add credentials or flag one as a clinical supervisor too.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Name</th><th>Role</th><th>Credentials</th><th>License expires</th><th></th></tr></thead>
+      <tbody>
+        ${admins.map(u => `
+          <tr>
+            <td>${u.name}<div class="small">${u.email}</div></td>
+            <td>${roleLabel(u)}</td>
+            <td>${u.credentials || "—"}</td>
+            <td>${fmtDate(u.license_expiration)}</td>
+            <td><button class="btn btn-outline btn-sm" data-edit="${u.id}">Edit</button></td>
+          </tr>
+        `).join("") || `<tr><td colspan="5" class="empty">No administrators yet.</td></tr>`}
+      </tbody>
+    </table></div>
+    ` : ""}
 
     <div class="section-title"><h3>Temporary coverage</h3>
       ${CURRENT_USER.role !== "provider" ? `<button class="btn btn-outline btn-sm" id="grant-coverage">+ Grant coverage</button>` : ""}
@@ -59,10 +91,19 @@ export async function renderProviders(content) {
 
   if (isAdmin) {
     content.querySelector("#invite-btn").addEventListener("click", () => openInviteForm(slps, () => renderProviders(content)));
+    content.querySelectorAll("[data-edit]").forEach(b => b.addEventListener("click", () => {
+      const u = users.find(x => x.id === parseInt(b.dataset.edit, 10));
+      const eligibleSlps = slps.filter(s => s.id !== u.id);
+      openEditForm(u, eligibleSlps, () => renderProviders(content));
+    }));
     content.querySelectorAll("[data-reset]").forEach(b => b.addEventListener("click", async () => {
       const resp = await api.post(`/api/users/${b.dataset.reset}/reset-password`);
-      showModal(`<h3>Temporary password</h3><p>Share this with the user through a trusted channel. They'll set up MFA again on next login.</p>
+      const emailedNote = resp.temp_password_emailed
+        ? `<p class="small">This was also emailed to them automatically.</p>`
+        : `<p class="small">Couldn't email this automatically (email isn't configured, or there's no address on file) — share it with them yourself.</p>`;
+      showModal(`<h3>Temporary password</h3><p>They'll set up MFA again on next login.</p>
         <div class="mfa-secret">${resp.temporary_password}</div>
+        ${emailedNote}
         <div class="actions"><button class="btn btn-primary" id="ok-btn">Done</button></div>`,
         (modal, close) => modal.querySelector("#ok-btn").addEventListener("click", close));
     }));
@@ -125,13 +166,60 @@ function openInviteForm(slps, onSaved) {
       if (!data.supervising_slp_id) delete data.supervising_slp_id;
       try {
         const resp = await api.post("/api/users", data);
+        const emailedNote = resp.user.temp_password_emailed
+          ? `<p class="small">This was also emailed to ${resp.user.name} automatically.</p>`
+          : `<p class="small">Couldn't email this automatically (email isn't configured, or there's no address on file) — share it with ${resp.user.name} yourself.</p>`;
         modal.querySelector(".modal").innerHTML = `
           <h3>Account created</h3>
-          <p>Share this temporary password with ${resp.user.name} through a trusted channel. They'll set up MFA on first login.</p>
+          <p>They'll set up MFA on first login.</p>
           <div class="mfa-secret">${resp.user.temporary_password}</div>
+          ${emailedNote}
           <div class="actions"><button class="btn btn-primary" id="ok-btn">Done</button></div>
         `;
         modal.querySelector("#ok-btn").addEventListener("click", () => { close(); onSaved(); });
+      } catch (err) { toast(err.message, true); }
+    });
+  });
+}
+
+function openEditForm(user, eligibleSlps, onSaved) {
+  showModal(`
+    <h3>Edit ${user.name}</h3>
+    <form id="edit-form">
+      <div class="field"><label>Full name</label><input name="name" value="${user.name}" required></div>
+      <div class="field"><label>Credentials</label><input name="credentials" value="${user.credentials || ""}" placeholder="e.g. SLP-CCC"></div>
+      <div class="field"><label>License number</label><input name="license_number" value="${user.license_number || ""}"></div>
+      <div class="field"><label>License expiration</label><input type="date" name="license_expiration" value="${user.license_expiration || ""}"></div>
+      ${user.role === "provider" ? `
+        <div class="field"><label>Supervising SLP</label><select name="supervising_slp_id">
+          <option value="">—</option>
+          ${eligibleSlps.map(s => `<option value="${s.id}" ${s.id === user.supervising_slp_id ? "selected" : ""}>${s.name}</option>`).join("")}
+        </select></div>
+      ` : ""}
+      ${user.role === "admin" ? `
+        <div class="field">
+          <label><input type="checkbox" name="is_supervising_slp" value="true" ${user.is_supervising_slp ? "checked" : ""}> Also acts as a clinical supervising SLP</label>
+          <p class="small">Lets providers report to this administrator, and tracks their credentials/license above.</p>
+        </div>
+      ` : ""}
+      <div class="actions">
+        <button type="button" class="btn btn-outline" id="cancel-btn">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  `, (modal, close) => {
+    modal.querySelector("#cancel-btn").addEventListener("click", close);
+    modal.querySelector("#edit-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const data = qs(form);
+      if (user.role === "provider" && !data.supervising_slp_id) data.supervising_slp_id = null;
+      if (user.role === "admin") data.is_supervising_slp = form.querySelector("[name=is_supervising_slp]").checked;
+      try {
+        await api.patch(`/api/users/${user.id}`, data);
+        toast("Saved.");
+        close();
+        onSaved();
       } catch (err) { toast(err.message, true); }
     });
   });
