@@ -69,15 +69,16 @@ def create_user(ctx, params, body):
     exists = ctx.db.execute("SELECT id FROM users WHERE lower(email)=?", (email,)).fetchone()
     if exists:
         raise conflict("A user with that email already exists")
-    temp_password = gen_temp_password()
+  temp_password = gen_temp_password()
     pw_hash, pw_salt = hash_password(temp_password)
+    is_supervising_slp = 1 if body.get("is_supervising_slp") in (True, "true", "1", 1) else 0
     cur = ctx.db.execute(
         "INSERT INTO users (name,email,role,password_hash,password_salt,is_active,supervising_slp_id,"
-        "credentials,license_number,license_expiration,invited_at,created_at) "
-        "VALUES (?,?,?,?,?,1,?,?,?,?,?,?)",
+        "credentials,license_number,license_expiration,invited_at,created_at,is_supervising_slp) "
+        "VALUES (?,?,?,?,?,1,?,?,?,?,?,?,?)",
         (name, email, role, pw_hash, pw_salt, body.get("supervising_slp_id"),
          body.get("credentials"), body.get("license_number"), body.get("license_expiration"),
-         now_iso(), now_iso()),
+         now_iso(), now_iso(), is_supervising_slp),
     )
     uid = cur.lastrowid
     log(ctx.db, ctx.user_id, "user_invited", "user", uid, {"email": email, "role": role})
@@ -93,10 +94,13 @@ def create_user(ctx, params, body):
 def update_user(ctx, params, body):
     ctx.require_role("admin")
     uid = int(params["id"])
-    row = ctx.db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+   row = ctx.db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
     if not row:
         raise not_found()
-    fields = ["name", "supervising_slp_id", "credentials", "license_number", "license_expiration", "notify_email"]
+    if "is_supervising_slp" in body:
+        body["is_supervising_slp"] = 1 if body["is_supervising_slp"] in (True, "true", "1", 1) else 0
+    fields = ["name", "supervising_slp_id", "credentials", "license_number", "license_expiration", "notify_email",
+              "is_supervising_slp"]
     updates, values = [], []
     for f in fields:
         if f in body:
