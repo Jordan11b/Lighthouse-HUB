@@ -107,8 +107,11 @@ def get_settings(ctx, params, body):
 def update_settings(ctx, params, body):
     ctx.require_role("admin")
     for k, v in body.items():
-        if k in mailer.SENSITIVE_SETTINGS and v == mailer.MASKED_VALUE:
-            continue  # unchanged - the browser just echoed the mask back
+        if k in mailer.SENSITIVE_SETTINGS and (v == mailer.MASKED_VALUE or v == ""):
+            # Unchanged: either the browser echoed the mask back, or the password field
+            # was left blank on purpose (it's never pre-filled with the real value, so a
+            # blank submission means "keep what's already saved," not "clear it").
+            continue
         ctx.db.execute(
             "INSERT INTO settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             (k, str(v)),
