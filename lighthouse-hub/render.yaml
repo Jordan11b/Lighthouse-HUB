@@ -6,6 +6,7 @@ services:
     name: lighthouse-therapy-hub
     runtime: python
     plan: starter
+    rootDir: lighthouse-hub
     startCommand: python3 server.py
     envVars:
       - key: LIGHTHOUSE_DATA_DIR
