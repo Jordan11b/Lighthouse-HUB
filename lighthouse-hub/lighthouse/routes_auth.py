@@ -68,6 +68,7 @@ def public_user(row):
         "id": row["id"], "name": row["name"], "email": row["email"], "role": row["role"],
         "is_active": bool(row["is_active"]), "mfa_enabled": bool(row["mfa_enabled"]),
         "notify_email": row["notify_email"] if "notify_email" in row.keys() else None,
+        "is_supervising_slp": bool(row["is_supervising_slp"]) if "is_supervising_slp" in row.keys() else False,
         "supervising_slp_id": row["supervising_slp_id"], "credentials": row["credentials"],
         "license_number": row["license_number"], "license_expiration": row["license_expiration"],
     }
