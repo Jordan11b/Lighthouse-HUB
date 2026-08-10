@@ -46,6 +46,18 @@ export async function renderAdministration(content) {
         <label>${label}${isEnvSet(key) ? ` <span class="small">(set by ${key.toUpperCase()} environment variable — the field below is ignored)</span>` : ""}</label>
         <input type="${type}" name="${key}" value="${settings[key] || ""}" ${isEnvSet(key) ? "disabled" : ""} ${extra}>
       </div>`;
+    // The password field is a special case: the server only ever sends back a masked
+    // placeholder (never the real saved password), so pre-filling the input's actual value
+    // with that mask caused browser password managers to fight with what you typed over it.
+    // Leave it blank instead - the placeholder text just indicates whether one's on file.
+    const passwordSet = !!settings.smtp_password; // masked value if set, empty if not
+    const smtpPasswordField = `
+      <div class="field">
+        <label>Password${isEnvSet("smtp_password") ? ` <span class="small">(set by SMTP_PASSWORD environment variable — the field below is ignored)</span>` : ""}</label>
+        <input type="password" name="smtp_password" autocomplete="new-password"
+          placeholder="${isEnvSet("smtp_password") ? "" : passwordSet ? "Currently set — leave blank to keep it" : "App password, not your regular login password"}"
+          ${isEnvSet("smtp_password") ? "disabled" : ""}>
+      </div>`;
     body.innerHTML = `
       <div class="card" style="max-width:520px;">
         <h3>School year</h3>
@@ -66,7 +78,7 @@ export async function renderAdministration(content) {
           ${smtpField("smtp_host", "SMTP host", "text", 'placeholder="smtp.gmail.com"')}
           ${smtpField("smtp_port", "Port", "number", 'placeholder="587"')}
           ${smtpField("smtp_username", "Username")}
-          ${smtpField("smtp_password", "Password", "password", 'placeholder="App password, not your regular login password"')}
+          ${smtpPasswordField}
           ${smtpField("smtp_from_email", "From address", "email", 'placeholder="Defaults to the username above"')}
           <button class="btn btn-primary" type="submit">Save email settings</button>
           <button type="button" class="btn btn-outline" id="test-email-btn">Send test email to myself</button>
