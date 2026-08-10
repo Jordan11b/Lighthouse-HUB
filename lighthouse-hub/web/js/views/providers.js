@@ -34,6 +34,7 @@ export async function renderProviders(content) {
                 <button class="btn btn-outline btn-sm" data-reset="${u.id}">Reset password</button>
                 <button class="btn btn-outline btn-sm" data-toggle="${u.id}" data-active="${u.is_active}">${u.is_active ? "Deactivate" : "Reactivate"}</button>
                 ${u.role === "provider" && caseload(u.id) > 0 ? `<button class="btn btn-outline btn-sm" data-bulk-transfer="${u.id}">Transfer caseload</button>` : ""}
+                <button class="btn btn-outline btn-sm btn-danger" data-delete="${u.id}" data-name="${u.name}">Delete permanently</button>
               </td>` : ""}
             </tr>
           `).join("") || `<tr><td colspan="8" class="empty">No staff yet.</td></tr>`}
@@ -78,6 +79,14 @@ export async function renderProviders(content) {
       const fromProvider = providers.find(p => p.id === fromId);
       const others = providers.filter(p => p.id !== fromId);
       openBulkTransferForm(fromProvider, others, caseload(fromId), () => renderProviders(content));
+    }));
+    content.querySelectorAll("[data-delete]").forEach(b => b.addEventListener("click", async () => {
+      if (!confirm(`Permanently delete ${b.dataset.name}? This can't be undone. Accounts with real service history (recorded attendance, scheduled sessions, an active caseload, etc.) will be blocked — deactivate those instead.`)) return;
+      try {
+        await api.del(`/api/users/${b.dataset.delete}`);
+        toast(`${b.dataset.name} was permanently deleted.`);
+        renderProviders(content);
+      } catch (err) { toast(err.message, true); }
     }));
   }
   if (CURRENT_USER.role !== "provider") {
