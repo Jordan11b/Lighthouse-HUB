@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS users (
     mfa_enabled INTEGER NOT NULL DEFAULT 0,
     notify_email TEXT,
     is_active INTEGER NOT NULL DEFAULT 1,
+    is_supervising_slp INTEGER NOT NULL DEFAULT 0,
     supervising_slp_id INTEGER REFERENCES users(id),
     credentials TEXT,
     license_number TEXT,
