@@ -99,8 +99,21 @@ def update_user(ctx, params, body):
         raise not_found()
     if "is_supervising_slp" in body:
         body["is_supervising_slp"] = 1 if body["is_supervising_slp"] in (True, "true", "1", 1) else 0
-    fields = ["name", "supervising_slp_id", "credentials", "license_number", "license_expiration", "notify_email",
-              "is_supervising_slp"]
+    if "email" in body:
+        # Admin-editable login email - mainly for onboarding (e.g. a provider account created
+        # with a placeholder email before their real one was known) since only the account
+        # owner can otherwise change this themselves, from My Account.
+        new_email = (body["email"] or "").strip().lower()
+        if not new_email or "@" not in new_email:
+            raise bad_request("Enter a valid email address")
+        exists = ctx.db.execute(
+            "SELECT id FROM users WHERE lower(email)=? AND id<>?", (new_email, uid)
+        ).fetchone()
+        if exists:
+            raise conflict("Another account already uses that email")
+        body["email"] = new_email
+    fields = ["name", "email", "supervising_slp_id", "credentials", "license_number", "license_expiration",
+              "notify_email", "is_supervising_slp"]
     updates, values = [], []
     for f in fields:
         if f in body:
