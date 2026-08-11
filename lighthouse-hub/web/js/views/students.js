@@ -18,12 +18,15 @@ export async function renderStudents(content) {
   ]);
 
   const needsReviewCount = activeStudents.filter(s => s.import_flags).length;
+  const programs = [...new Set(allStudents.map(s => s.program).filter(Boolean))].sort();
 
   content.innerHTML = `
     <div class="toolbar">
       <input class="search" id="q" placeholder="Search students…">
       <select id="filter-school"><option value="">All schools</option>
         ${ref.schools.map(s => `<option value="${s.id}">${s.code ? `${s.code} — ` : ""}${s.name}</option>`).join("")}</select>
+      ${programs.length ? `<select id="filter-program"><option value="">All programs</option>
+        ${programs.map(p => `<option value="${p}">${p}</option>`).join("")}</select>` : ""}
       <select id="filter-status">
         <option value="">Active + inactive</option>
         <option value="all">All statuses (incl. archived)</option>
@@ -37,7 +40,7 @@ export async function renderStudents(content) {
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Name</th><th>School</th><th>Grade</th><th>Provider</th><th>Frequency</th><th>Type</th><th>Status</th></tr></thead>
+        <thead><tr><th>Name</th><th>School</th><th>Grade</th><th>Program</th><th>Provider</th><th>Frequency</th><th>Type</th><th>Status</th></tr></thead>
         <tbody id="rows"></tbody>
       </table>
     </div>
@@ -50,6 +53,8 @@ export async function renderStudents(content) {
   function draw() {
     const q = content.querySelector("#q").value.toLowerCase();
     const schoolFilter = content.querySelector("#filter-school").value;
+    const programFilterEl = content.querySelector("#filter-program");
+    const programFilter = programFilterEl ? programFilterEl.value : "";
     const statusFilter = content.querySelector("#filter-status").value;
     const needsReviewOnly = content.querySelector("#filter-needs-review").checked;
     let pool = statusFilter === "" ? activeStudents : allStudents;
@@ -57,18 +62,20 @@ export async function renderStudents(content) {
     const rows = pool.filter(s =>
       (!q || s.name.toLowerCase().includes(q)) &&
       (!schoolFilter || String(s.school_id) === schoolFilter) &&
+      (!programFilter || s.program === programFilter) &&
       (!needsReviewOnly || s.import_flags)
     );
     content.querySelector("#rows").innerHTML = rows.map(s => `
       <tr class="clickable" data-id="${s.id}">
         <td>${s.name}${s.import_flags ? ` <span title="${escapeAttr(s.import_flags)}" style="color:#b45309;font-weight:600;" class="small">⚠ Needs review</span>` : ""}</td>
         <td>${schoolName(s.school_id)}</td><td>${s.grade || "—"}</td>
+        <td>${s.program || "—"}</td>
         <td>${providerName(s.provider_id)}</td>
         <td>${s.sessions_per_week}x/wk · ${s.duration_minutes}min</td>
         <td>${s.is_group ? "Group" : "Individual"}</td>
         <td>${s.status}</td>
       </tr>
-    `).join("") || `<tr><td colspan="7" class="empty">No students match.</td></tr>`;
+    `).join("") || `<tr><td colspan="8" class="empty">No students match.</td></tr>`;
     content.querySelectorAll("#rows tr[data-id]").forEach(r => {
       r.addEventListener("click", () => { location.hash = `#/students/${r.dataset.id}`; });
     });
@@ -76,6 +83,8 @@ export async function renderStudents(content) {
   draw();
   content.querySelector("#q").addEventListener("input", draw);
   content.querySelector("#filter-school").addEventListener("change", draw);
+  const programFilterEl = content.querySelector("#filter-program");
+  if (programFilterEl) programFilterEl.addEventListener("change", draw);
   content.querySelector("#filter-status").addEventListener("change", draw);
   content.querySelector("#filter-needs-review").addEventListener("change", draw);
 
@@ -96,7 +105,8 @@ function openStudentForm(ref, existing, onSaved) {
         <div class="field"><label>School</label><select name="school_id" required>
           ${ref.schools.map(sc => `<option value="${sc.id}" ${s.school_id === sc.id ? "selected" : ""}>${sc.code ? `${sc.code} — ` : ""}${sc.name}</option>`).join("")}
         </select></div>
-        <div class="field"><label>Grade</label><input name="grade" value="${s.grade || ""}"></div>
+        <div class="field"><label>Grade</label><input name="grade" value="${s.grade || ""}" placeholder="e.g. 6th Grade, Kindergarten"></div>
+        <div class="field"><label>Program</label><input name="program" value="${s.program || ""}" placeholder="e.g. IDS"></div>
         <div class="field"><label>Disability / diagnosis</label><input name="disability" value="${s.disability || ""}"></div>
         ${lockProviderToSelf ? `<div class="field"><label>Provider</label><input value="${CURRENT_USER.name} (you)" disabled></div>` : `
         <div class="field"><label>Provider</label><select name="provider_id">
@@ -173,7 +183,7 @@ export async function renderStudentDetail(content, id) {
       <div class="card">
         <h3>Student</h3>
         <div style="font-size:20px;font-weight:700;margin:4px 0;">${student.name}</div>
-        <div class="small">${student.student_ext_id || "No ID on file"} · Grade ${student.grade || "—"}</div>
+        <div class="small">${student.student_ext_id || "No ID on file"} · Grade ${student.grade || "—"}${student.program ? ` · ${student.program}` : ""}</div>
         <div class="small" style="margin-top:8px;">${student.disability || "No diagnosis on file"}</div>
       </div>
       <div class="card">
