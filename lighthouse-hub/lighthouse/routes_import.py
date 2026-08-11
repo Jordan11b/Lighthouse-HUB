@@ -121,10 +121,23 @@ def _build_preview(ctx, headers, rows):
 
         provider_raw = get("provider")
         provider_id = None
-        if provider_raw:
-            provider_id = provider_by_email.get(provider_raw.strip().lower()) or provider_by_name.get(provider_raw.strip().lower())
+        if not provider_raw:
+            review_flags.append("No provider given - left unassigned")
+        else:
+            key = provider_raw.strip().lower()
+            provider_id = provider_by_email.get(key) or provider_by_name.get(key)
             if not provider_id:
-                review_flags.append(f"Provider '{provider_raw}' not recognized - left unassigned")
+                # Fall back to matching on first name only (e.g. a schedule file that just
+                # says "Kelly") - but only when exactly one provider has that first name, so
+                # a first-name collision never silently assigns the wrong person.
+                first_name_matches = {pid for full_name, pid in provider_by_name.items() if full_name.split()[0] == key}
+                if len(first_name_matches) == 1:
+                    provider_id = next(iter(first_name_matches))
+                    review_flags.append(f"Provider matched by first name only ('{provider_raw}') - please double-check this is the right person")
+                elif len(first_name_matches) > 1:
+                    review_flags.append(f"Provider '{provider_raw}' matches more than one account by first name - please assign manually")
+                else:
+                    review_flags.append(f"Provider '{provider_raw}' not recognized - left unassigned")
 
         elig, elig_ok = _standardize_date(get("eligibility_date"))
         if get("eligibility_date") and not elig_ok:
