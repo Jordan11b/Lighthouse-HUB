@@ -17,6 +17,8 @@ export async function renderStudents(content) {
     api.get("/api/students"), api.get("/api/students?status=all"), loadRefData(),
   ]);
 
+  const needsReviewCount = activeStudents.filter(s => s.import_flags).length;
+
   content.innerHTML = `
     <div class="toolbar">
       <input class="search" id="q" placeholder="Search students…">
@@ -27,6 +29,9 @@ export async function renderStudents(content) {
         <option value="all">All statuses (incl. archived)</option>
         <option value="archived">Archived only</option>
       </select>
+      <label class="small" style="display:flex;align-items:center;gap:6px;white-space:nowrap;">
+        <input type="checkbox" id="filter-needs-review"> Needs review only${needsReviewCount ? ` (${needsReviewCount})` : ""}
+      </label>
       <div class="spacer"></div>
       <button class="btn btn-primary" id="new-student">+ Add student</button>
     </div>
@@ -40,20 +45,24 @@ export async function renderStudents(content) {
 
   const providerName = (id) => (ref.providers.find(p => p.id === id) || {}).name || "Unassigned";
   const schoolName = (id) => (ref.schools.find(s => s.id === id) || {}).name || "—";
+  const escapeAttr = (s) => String(s || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 
   function draw() {
     const q = content.querySelector("#q").value.toLowerCase();
     const schoolFilter = content.querySelector("#filter-school").value;
     const statusFilter = content.querySelector("#filter-status").value;
+    const needsReviewOnly = content.querySelector("#filter-needs-review").checked;
     let pool = statusFilter === "" ? activeStudents : allStudents;
     if (statusFilter === "archived") pool = pool.filter(s => s.status === "archived");
     const rows = pool.filter(s =>
       (!q || s.name.toLowerCase().includes(q)) &&
-      (!schoolFilter || String(s.school_id) === schoolFilter)
+      (!schoolFilter || String(s.school_id) === schoolFilter) &&
+      (!needsReviewOnly || s.import_flags)
     );
     content.querySelector("#rows").innerHTML = rows.map(s => `
       <tr class="clickable" data-id="${s.id}">
-        <td>${s.name}</td><td>${schoolName(s.school_id)}</td><td>${s.grade || "—"}</td>
+        <td>${s.name}${s.import_flags ? ` <span title="${escapeAttr(s.import_flags)}" style="color:#b45309;font-weight:600;" class="small">⚠ Needs review</span>` : ""}</td>
+        <td>${schoolName(s.school_id)}</td><td>${s.grade || "—"}</td>
         <td>${providerName(s.provider_id)}</td>
         <td>${s.sessions_per_week}x/wk · ${s.duration_minutes}min</td>
         <td>${s.is_group ? "Group" : "Individual"}</td>
@@ -68,6 +77,7 @@ export async function renderStudents(content) {
   content.querySelector("#q").addEventListener("input", draw);
   content.querySelector("#filter-school").addEventListener("change", draw);
   content.querySelector("#filter-status").addEventListener("change", draw);
+  content.querySelector("#filter-needs-review").addEventListener("change", draw);
 
   content.querySelector("#new-student").addEventListener("click", () => openStudentForm(ref, null, () => renderStudents(content)));
 }
@@ -154,6 +164,10 @@ export async function renderStudentDetail(content, id) {
       <button class="btn btn-outline" id="merge-btn">Merge duplicate…</button>` : ""}
     </div>
     ${student.status === "archived" ? `<div class="info-box">This record is archived${student.comments && student.comments.includes("Merged into") ? " — merged into another record." : "."}</div>` : ""}
+    ${student.import_flags ? `<div class="info-box" style="border-color:#b45309;background:#fffbeb;">
+      <strong>⚠ Needs review — imported with some info missing or unrecognized:</strong><br>${student.import_flags.split("; ").join("<br>")}
+      <br><span class="small">This clears automatically the next time you Edit and save this record.</span>
+    </div>` : ""}
 
     <div class="grid grid-3">
       <div class="card">

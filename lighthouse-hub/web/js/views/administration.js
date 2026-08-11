@@ -165,19 +165,25 @@ export async function renderAdministration(content) {
   function renderPreview(body, importId, preview) {
     const area = body.querySelector("#preview-area");
     const willImport = preview.rows.filter(r => r.will_import).length;
+    const needsReview = preview.rows.filter(r => r.will_import && (r.review_flags || []).length).length;
     area.innerHTML = `
-      <div class="section-title"><h3>Preview — ${preview.rows.length} row(s), ${willImport} ready to import</h3></div>
+      <div class="section-title"><h3>Preview — ${preview.rows.length} row(s), ${willImport} will be added${needsReview ? ` (${needsReview} flagged for review after import)` : ""}</h3></div>
+      <p class="small">Every row with a name gets added, even if the school, provider, dates, or frequency couldn't be matched - those just get a "needs review" note on the student instead of being left out. Only a missing name or a likely duplicate is skipped entirely.</p>
       ${preview.missing_required_columns.length ? `<div class="error-box">Missing required column(s): ${preview.missing_required_columns.join(", ")}</div>` : ""}
       <div class="table-wrap"><table>
-        <thead><tr><th>Row</th><th>Name</th><th>School</th><th>Provider</th><th>Frequency</th><th>Issues</th></tr></thead>
+        <thead><tr><th>Row</th><th>Name</th><th>School</th><th>Provider</th><th>Frequency</th><th>Notes</th></tr></thead>
         <tbody>
           ${preview.rows.map(r => `
-            <tr style="${r.will_import ? "" : "opacity:.6;"}">
+            <tr style="${r.will_import ? "" : "opacity:.5;"}">
               <td>${r.row_number}</td><td>${r.name || "—"}</td>
               <td>${r.school_raw || "—"}${r.school_id ? "" : " ⚠"}</td>
               <td>${r.provider_raw || "Unassigned"}</td>
               <td>${r.sessions_per_week}x/wk · ${r.duration_minutes}min</td>
-              <td class="small">${r.flags.join("; ") || (r.will_import ? "Ready" : "")}</td>
+              <td class="small">${
+                !r.will_import ? `Not added: ${r.blocking_flags.join("; ")}`
+                : (r.review_flags && r.review_flags.length) ? `Added, needs review: ${r.review_flags.join("; ")}`
+                : "Ready"
+              }</td>
             </tr>
           `).join("")}
         </tbody>
