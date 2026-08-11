@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS students (
     name TEXT NOT NULL,
     school_id INTEGER NOT NULL REFERENCES schools(id),
     grade TEXT,
+    program TEXT,
     disability TEXT,
     eligibility_date TEXT,
     iep_date TEXT,
@@ -309,6 +310,11 @@ def _migrate(conn):
         conn.execute("ALTER TABLE schools ADD COLUMN code TEXT")
 
     student_cols = {row["name"] for row in conn.execute("PRAGMA table_info(students)")}
+    if "program" not in student_cols:
+        # A special-ed classroom/program designation (e.g. "IDS" - Intensive Development
+        # Skills) that some source rosters glue onto the front of the Grade text instead of
+        # giving it its own column. Kept separate so Grade itself can stay normalized.
+        conn.execute("ALTER TABLE students ADD COLUMN program TEXT")
     if "import_flags" not in student_cols:
         # Free-text note (e.g. "School not recognized - please assign"; "Provider not set")
         # left behind when a roster import couldn't fully match a row, so nothing gets left

@@ -453,10 +453,10 @@ def create_student(ctx, params, body):
         supervising_slp_id = body.get("supervising_slp_id") or (ctx.user_id if ctx.role == "supervising_slp" else None)
 
     cur = ctx.db.execute(
-        "INSERT INTO students (student_ext_id,name,school_id,grade,disability,eligibility_date,iep_date,"
+        "INSERT INTO students (student_ext_id,name,school_id,grade,program,disability,eligibility_date,iep_date,"
         "service_start,service_end,provider_id,supervising_slp_id,sessions_per_week,duration_minutes,"
-        "group_individual,status,comments,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (body.get("student_ext_id"), name, school_id, body.get("grade"), body.get("disability"),
+        "group_individual,status,comments,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (body.get("student_ext_id"), name, school_id, body.get("grade"), body.get("program"), body.get("disability"),
          body.get("eligibility_date"), body.get("iep_date"), body.get("service_start"), body.get("service_end"),
          provider_id, supervising_slp_id,
          body.get("sessions_per_week", 1), body.get("duration_minutes", 30),
@@ -564,7 +564,7 @@ def update_student(ctx, params, body):
     row = ctx.db.execute("SELECT * FROM students WHERE id=?", (sid,)).fetchone()
     if not row or not student_visible_to(ctx, row):
         raise not_found()
-    fields = ["student_ext_id", "name", "school_id", "grade", "disability", "eligibility_date", "iep_date",
+    fields = ["student_ext_id", "name", "school_id", "grade", "program", "disability", "eligibility_date", "iep_date",
               "service_start", "service_end", "sessions_per_week", "duration_minutes",
               "group_individual", "status", "comments"]
     updates, values = [], []

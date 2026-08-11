@@ -13,6 +13,7 @@ from .db import now_iso
 from .errors import bad_request, forbidden, not_found
 from .audit import log
 from .xlsx_reader import read_first_sheet
+from .grade_utils import normalize_grade
 
 router = Router()
 
@@ -21,6 +22,7 @@ FIELD_ALIASES = {
     "name": ["name", "student name", "full name"],
     "school": ["school", "school name"],
     "grade": ["grade"],
+    "program": ["program", "special program", "classroom", "classroom type"],
     "disability": ["disability", "diagnosis"],
     "eligibility_date": ["eligibility date", "eligibility"],
     "iep_date": ["iep date", "iep"],
@@ -119,6 +121,13 @@ def _build_preview(ctx, headers, rows):
         elif not school_id:
             review_flags.append(f"School '{school_raw}' not recognized - left as \"Needs School Assignment\", please fix")
 
+        # A source file sometimes glues a program code onto the front of Grade (e.g. "IDS
+        # 6th") instead of giving it its own column - normalize_grade splits that out and
+        # standardizes the grade text itself ("6" / "06" / "6th" -> "6th Grade"). A dedicated
+        # Program column, if present, wins over anything detected inside Grade.
+        detected_program, grade = normalize_grade(get("grade"))
+        program = get("program") or detected_program
+
         provider_raw = get("provider")
         provider_id = None
         if not provider_raw:
@@ -203,7 +212,7 @@ def _build_preview(ctx, headers, rows):
         preview_rows.append({
             "row_number": i + 2,  # +2: header is row 1, data is 1-indexed after it
             "student_ext_id": ext_id or None, "name": name, "school_raw": school_raw, "school_id": school_id,
-            "grade": get("grade") or None, "disability": get("disability") or None,
+            "grade": grade or None, "program": program or None, "disability": get("disability") or None,
             "eligibility_date": elig, "iep_date": iep, "service_start": svc_start, "service_end": svc_end,
             "provider_raw": provider_raw or None, "provider_id": provider_id,
             "sessions_per_week": freq, "duration_minutes": duration, "group_individual": group_individual,
@@ -305,10 +314,10 @@ def approve_import(ctx, params, body):
             school_id = placeholder_school_id
         review_flags = r.get("review_flags") or []
         ctx.db.execute(
-            "INSERT INTO students (student_ext_id,name,school_id,grade,disability,eligibility_date,iep_date,"
+            "INSERT INTO students (student_ext_id,name,school_id,grade,program,disability,eligibility_date,iep_date,"
             "service_start,service_end,provider_id,supervising_slp_id,sessions_per_week,duration_minutes,"
-            "group_individual,status,comments,import_flags,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (r["student_ext_id"], r["name"], school_id, r["grade"], r["disability"], r["eligibility_date"],
+            "group_individual,status,comments,import_flags,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (r["student_ext_id"], r["name"], school_id, r["grade"], r.get("program"), r["disability"], r["eligibility_date"],
              r["iep_date"], r["service_start"], r["service_end"], r["provider_id"],
              ctx.user_id if ctx.role == "supervising_slp" else None,
              r["sessions_per_week"], r["duration_minutes"], r["group_individual"], "active", None,
