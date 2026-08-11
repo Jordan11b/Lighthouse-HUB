@@ -158,6 +158,7 @@ tr.clickable:hover { background: var(--gold-light); }
 .pill-on_target, .pill-not_yet_due { background: #e6f5ee; color: var(--green); }
 .pill-at_risk { background: #fdf6e3; color: var(--yellow); }
 .pill-behind { background: #fdecea; color: var(--red); }
+.pill-needs_scheduling { background: #eaf1fd; color: var(--blue); }
 
 .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
 .toolbar .spacer { flex: 1; }
