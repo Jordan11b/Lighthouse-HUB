@@ -321,10 +321,10 @@ def create_school(ctx, params, body):
     if not name:
         raise bad_request("name is required")
     cur = ctx.db.execute(
-        "INSERT INTO schools (name,address,contact_name,contact_phone,contact_email,hours,is_active) "
-        "VALUES (?,?,?,?,?,?,1)",
-        (name, body.get("address"), body.get("contact_name"), body.get("contact_phone"),
-         body.get("contact_email"), body.get("hours")),
+        "INSERT INTO schools (name,code,address,contact_name,contact_phone,contact_email,hours,is_active) "
+        "VALUES (?,?,?,?,?,?,?,1)",
+        (name, (body.get("code") or "").strip() or None, body.get("address"), body.get("contact_name"),
+         body.get("contact_phone"), body.get("contact_email"), body.get("hours")),
     )
     sid = cur.lastrowid
     log(ctx.db, ctx.user_id, "school_created", "school", sid, {"name": name})
@@ -337,7 +337,7 @@ def create_school(ctx, params, body):
 def update_school(ctx, params, body):
     ctx.require_role("admin")
     sid = int(params["id"])
-    fields = ["name", "address", "contact_name", "contact_phone", "contact_email", "hours", "is_active"]
+    fields = ["name", "code", "address", "contact_name", "contact_phone", "contact_email", "hours", "is_active"]
     updates, values = [], []
     for f in fields:
         if f in body:

@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS sessions_auth (
 CREATE TABLE IF NOT EXISTS schools (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
+    code TEXT,
     address TEXT,
     contact_name TEXT,
     contact_phone TEXT,
@@ -294,7 +295,17 @@ def _migrate(conn):
     if "notify_email" not in user_cols:
         conn.execute("ALTER TABLE users ADD COLUMN notify_email TEXT")
     if "is_supervising_slp" not in user_cols:
+        # Lets a role='admin' account also act as a clinical supervising SLP (providers can
+        # report to them, credentials/license are tracked) without needing a second account.
+        # Meaningless for role='provider'; always implicitly true for role='supervising_slp'.
         conn.execute("ALTER TABLE users ADD COLUMN is_supervising_slp INTEGER NOT NULL DEFAULT 0")
+
+    school_cols = {row["name"] for row in conn.execute("PRAGMA table_info(schools)")}
+    if "code" not in school_cols:
+        # Short acronym (e.g. "OKMS") kept alongside the full display name (e.g. "Orchard
+        # Knob Middle School") so roster/schedule spreadsheets can keep using the acronym in
+        # their School column while the app shows the real name everywhere.
+        conn.execute("ALTER TABLE schools ADD COLUMN code TEXT")
 
 
 def init_db():
