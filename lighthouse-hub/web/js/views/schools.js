@@ -14,7 +14,7 @@ export async function renderSchools(content) {
     <div class="grid grid-3">
       ${schools.map(s => `
         <div class="card clickable" data-id="${s.id}">
-          <h3>${s.is_active ? "" : "(Inactive) "}${s.name}</h3>
+          <h3>${s.is_active ? "" : "(Inactive) "}${s.name}${s.code ? ` <span class="small">(${s.code})</span>` : ""}</h3>
           <div class="small">${s.address || "No address on file"}</div>
           <div class="small">${s.contact_name || ""} ${s.contact_phone || ""}</div>
           <div class="stat" style="font-size:22px;">${students.filter(st => st.school_id === s.id && st.status === "active").length}</div>
@@ -32,7 +32,8 @@ function openSchoolForm(existing, onSaved) {
   showModal(`
     <h3>${existing ? "Edit school" : "Add school"}</h3>
     <form id="school-form">
-      <div class="field"><label>Name</label><input name="name" required value="${s.name || ""}"></div>
+      <div class="field"><label>Name</label><input name="name" required value="${s.name || ""}" placeholder="e.g. Orchard Knob Middle School"></div>
+      <div class="field"><label>Code</label><input name="code" value="${s.code || ""}" placeholder="e.g. OKMS"></div>
       <div class="field"><label>Address</label><input name="address" value="${s.address || ""}"></div>
       <div class="field"><label>Contact name</label><input name="contact_name" value="${s.contact_name || ""}"></div>
       <div class="field"><label>Contact phone</label><input name="contact_phone" value="${s.contact_phone || ""}"></div>
@@ -69,7 +70,7 @@ export async function renderSchoolDetail(content, id) {
       ${isAdmin ? `<button class="btn btn-outline" id="edit-btn">Edit</button>` : ""}
     </div>
     <div class="grid grid-3">
-      <div class="card"><h3>School</h3><div style="font-size:20px;font-weight:700;">${school.name}</div><div class="small">${school.address || "—"}</div></div>
+      <div class="card"><h3>School</h3><div style="font-size:20px;font-weight:700;">${school.name}</div>${school.code ? `<div class="small">Code: ${school.code}</div>` : ""}<div class="small">${school.address || "—"}</div></div>
       <div class="card"><h3>Contact</h3><div>${school.contact_name || "—"}</div><div class="small">${school.contact_phone || ""} ${school.contact_email || ""}</div></div>
       <div class="card"><h3>Hours</h3><div>${school.hours || "—"}</div></div>
     </div>

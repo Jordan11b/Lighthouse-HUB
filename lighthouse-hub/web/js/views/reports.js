@@ -12,7 +12,7 @@ export async function renderReports(content) {
         return `<option value="${m}" ${m === now.getMonth()+1 ? "selected" : ""}>${new Date(2020, i, 1).toLocaleString(undefined,{month:"long"})}</option>`;
       }).join("")}</select>
       <input id="year" type="number" value="${now.getFullYear()}" style="width:90px;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;">
-      <select id="school"><option value="">All schools</option>${schools.map(s => `<option value="${s.id}">${s.name}</option>`).join("")}</select>
+      <select id="school"><option value="">All schools</option>${schools.map(s => `<option value="${s.id}">${s.code ? `${s.code} — ` : ""}${s.name}</option>`).join("")}</select>
       <div class="spacer"></div>
       <button class="btn btn-outline" id="export-csv">Export CSV</button>
       <button class="btn btn-outline" id="export-pdf">Export PDF</button>

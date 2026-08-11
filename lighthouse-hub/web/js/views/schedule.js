@@ -118,7 +118,7 @@ function openNewSessionModal(providers, schools, students, onSaved) {
       <div class="field" id="students-field" style="display:none;"><label>Students (group)</label>
         <select name="student_ids" multiple size="6">${students.map(s => `<option value="${s.id}">${s.name}</option>`).join("")}</select>
       </div>
-      <div class="field"><label>School</label><select name="school_id">${schools.map(s => `<option value="${s.id}">${s.name}</option>`).join("")}</select></div>
+      <div class="field"><label>School</label><select name="school_id">${schools.map(s => `<option value="${s.id}">${s.code ? `${s.code} — ` : ""}${s.name}</option>`).join("")}</select></div>
       <div class="field"><label>Date</label><input type="date" name="date" required value="${todayISO()}"></div>
       <div class="field"><label>Start time</label><input type="time" name="start_time" required value="09:00"></div>
       <div class="field"><label>Duration (minutes)</label><input type="number" name="duration_minutes" value="30" min="5" required></div>
@@ -282,7 +282,7 @@ function openRecurringModal(providers, schools, students, onSaved) {
     <form id="rec-form">
       <div class="field"><label>Student</label><select name="student_id">${students.map(s => `<option value="${s.id}">${s.name}</option>`).join("")}</select></div>
       <div class="field"><label>Provider</label><select name="provider_id" ${isProviderOnly ? "disabled" : ""}>${providerOptions}</select></div>
-      <div class="field"><label>School</label><select name="school_id">${schools.map(s => `<option value="${s.id}">${s.name}</option>`).join("")}</select></div>
+      <div class="field"><label>School</label><select name="school_id">${schools.map(s => `<option value="${s.id}">${s.code ? `${s.code} — ` : ""}${s.name}</option>`).join("")}</select></div>
       <div class="field"><label>Day of week</label><select name="day_of_week">
         <option value="0">Monday</option><option value="1">Tuesday</option><option value="2">Wednesday</option>
         <option value="3">Thursday</option><option value="4">Friday</option>

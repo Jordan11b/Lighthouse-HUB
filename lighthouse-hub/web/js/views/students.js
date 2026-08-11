@@ -21,7 +21,7 @@ export async function renderStudents(content) {
     <div class="toolbar">
       <input class="search" id="q" placeholder="Search students…">
       <select id="filter-school"><option value="">All schools</option>
-        ${ref.schools.map(s => `<option value="${s.id}">${s.name}</option>`).join("")}</select>
+        ${ref.schools.map(s => `<option value="${s.id}">${s.code ? `${s.code} — ` : ""}${s.name}</option>`).join("")}</select>
       <select id="filter-status">
         <option value="">Active + inactive</option>
         <option value="all">All statuses (incl. archived)</option>
@@ -84,7 +84,7 @@ function openStudentForm(ref, existing, onSaved) {
         <div class="field"><label>Full name</label><input name="name" required value="${s.name || ""}"></div>
         <div class="field"><label>Student ID</label><input name="student_ext_id" value="${s.student_ext_id || ""}"></div>
         <div class="field"><label>School</label><select name="school_id" required>
-          ${ref.schools.map(sc => `<option value="${sc.id}" ${s.school_id === sc.id ? "selected" : ""}>${sc.name}</option>`).join("")}
+          ${ref.schools.map(sc => `<option value="${sc.id}" ${s.school_id === sc.id ? "selected" : ""}>${sc.code ? `${sc.code} — ` : ""}${sc.name}</option>`).join("")}
         </select></div>
         <div class="field"><label>Grade</label><input name="grade" value="${s.grade || ""}"></div>
         <div class="field"><label>Disability / diagnosis</label><input name="disability" value="${s.disability || ""}"></div>
@@ -164,7 +164,7 @@ export async function renderStudentDetail(content, id) {
       </div>
       <div class="card">
         <h3>Assignment</h3>
-        <div>${school ? school.name : "—"}</div>
+        <div>${school ? `${school.name}${school.code ? ` (${school.code})` : ""}` : "—"}</div>
         <div class="small">Provider: ${provider ? provider.name : "Unassigned"}</div>
         <div class="small">${student.sessions_per_week}x/week · ${student.duration_minutes} min · ${student.is_group ? "Group" : "Individual"}</div>
       </div>
@@ -265,7 +265,7 @@ function openTransferForm(ref, student, onSaved) {
       </select></div>
       <div class="field"><label>New school</label><select name="to_school_id">
         <option value="">No change</option>
-        ${ref.schools.map(s => `<option value="${s.id}">${s.name}</option>`).join("")}
+        ${ref.schools.map(s => `<option value="${s.id}">${s.code ? `${s.code} — ` : ""}${s.name}</option>`).join("")}
       </select></div>
       <div class="field"><label>Effective date</label><input type="date" name="effective_date" required></div>
       <div class="field"><label>Reason</label><input name="reason" required></div>
