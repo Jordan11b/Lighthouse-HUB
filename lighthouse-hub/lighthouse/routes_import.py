@@ -129,11 +129,12 @@ def _build_preview(ctx, headers, rows):
             if not provider_id:
                 # Fall back to matching on first name only (e.g. a schedule file that just
                 # says "Kelly") - but only when exactly one provider has that first name, so
-                # a first-name collision never silently assigns the wrong person.
+                # a first-name collision never silently assigns the wrong person. This case
+                # counts as a clean match (no review flag) - it's unambiguous, so no follow-up
+                # needed.
                 first_name_matches = {pid for full_name, pid in provider_by_name.items() if full_name.split()[0] == key}
                 if len(first_name_matches) == 1:
                     provider_id = next(iter(first_name_matches))
-                    review_flags.append(f"Provider matched by first name only ('{provider_raw}') - please double-check this is the right person")
                 elif len(first_name_matches) > 1:
                     review_flags.append(f"Provider '{provider_raw}' matches more than one account by first name - please assign manually")
                 else:
