@@ -187,6 +187,11 @@ function openEditForm(user, eligibleSlps, onSaved) {
     <h3>Edit ${user.name}</h3>
     <form id="edit-form">
       <div class="field"><label>Full name</label><input name="name" value="${user.name}" required></div>
+      ${user.role !== "admin" ? `
+        <div class="field"><label>Login email</label><input type="email" name="email" value="${user.email || ""}" required>
+          <p class="small">This is what they sign in with. Only change it here if it's wrong or was set as a placeholder - otherwise they should update it themselves from My Account.</p>
+        </div>
+      ` : ""}
       <div class="field"><label>Credentials</label><input name="credentials" value="${user.credentials || ""}" placeholder="e.g. SLP-CCC"></div>
       <div class="field"><label>License number</label><input name="license_number" value="${user.license_number || ""}"></div>
       <div class="field"><label>License expiration</label><input type="date" name="license_expiration" value="${user.license_expiration || ""}"></div>
