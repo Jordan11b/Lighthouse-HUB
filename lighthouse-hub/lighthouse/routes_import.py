@@ -66,10 +66,27 @@ def _standardize_date(raw):
 
 
 def _build_preview(ctx, headers, rows):
-    mapping = _map_headers(headers)
-    missing_required = [f for f in ("name", "school") if f not in mapping]
+    """Builds the row-by-row import preview.
 
-    schools = {s["name"].strip().lower(): s["id"] for s in ctx.db.execute("SELECT id, name FROM schools").fetchall()}
+    Only two things ever keep a row out of the roster entirely: no name to identify the
+    student by, or it looks like a duplicate (of an existing student, or of another row in
+    this same file). Everything else - an unrecognized school, an unrecognized provider, a
+    date that doesn't parse, a frequency/duration that isn't a number - still gets imported
+    with a sensible default, and is recorded in "review_flags" so nothing gets silently lost
+    off the roster. Those review flags get saved onto the student record itself (see
+    approve_import below) and surface as a "needs review" notice in the app until someone
+    opens the record, fixes it, and saves.
+    """
+    mapping = _map_headers(headers)
+    missing_required = [f for f in ("name",) if f not in mapping]
+
+    # Match on either the full school name or its short code (e.g. "OKMS"), so a roster file
+    # can use whichever one the source spreadsheet already had in its School column.
+    schools = {}
+    for s in ctx.db.execute("SELECT id, name, code FROM schools").fetchall():
+        schools[s["name"].strip().lower()] = s["id"]
+        if s["code"] and s["code"].strip():
+            schools.setdefault(s["code"].strip().lower(), s["id"])
     providers = ctx.db.execute("SELECT id, name, email FROM users WHERE role='provider'").fetchall()
     provider_by_name = {p["name"].strip().lower(): p["id"] for p in providers}
     provider_by_email = {p["email"].strip().lower(): p["id"] for p in providers}
@@ -86,55 +103,68 @@ def _build_preview(ctx, headers, rows):
 
     preview_rows = []
     for i, row in enumerate(rows):
-        flags = []
+        blocking_flags = []   # row won't be created at all
+        review_flags = []     # row IS created, but needs a follow-up look
         get = lambda f: (row.get(mapping.get(f, ""), "") or "").strip()
 
         name = get("name")
         school_raw = get("school")
         ext_id = get("student_ext_id")
         if not name:
-            flags.append("Missing name")
-        if not school_raw:
-            flags.append("Missing school")
+            blocking_flags.append("Missing name - nothing to import this row as")
+
         school_id = schools.get(school_raw.strip().lower()) if school_raw else None
-        if school_raw and not school_id:
-            flags.append(f"Unknown school '{school_raw}' - add it first or fix the spelling")
+        if not school_raw:
+            review_flags.append("No school given - left as \"Needs School Assignment\", please set the real school")
+        elif not school_id:
+            review_flags.append(f"School '{school_raw}' not recognized - left as \"Needs School Assignment\", please fix")
 
         provider_raw = get("provider")
         provider_id = None
         if provider_raw:
             provider_id = provider_by_email.get(provider_raw.strip().lower()) or provider_by_name.get(provider_raw.strip().lower())
             if not provider_id:
-                flags.append(f"Unknown provider '{provider_raw}'")
+                review_flags.append(f"Provider '{provider_raw}' not recognized - left unassigned")
 
         elig, elig_ok = _standardize_date(get("eligibility_date"))
         if get("eligibility_date") and not elig_ok:
-            flags.append("Eligibility date not recognized - please check format")
+            review_flags.append(f"Eligibility date \"{get('eligibility_date')}\" not recognized - left blank")
+            elig = None
         iep, iep_ok = _standardize_date(get("iep_date"))
         if get("iep_date") and not iep_ok:
-            flags.append("IEP date not recognized - please check format")
+            review_flags.append(f"IEP date \"{get('iep_date')}\" not recognized - left blank")
+            iep = None
         svc_start, ss_ok = _standardize_date(get("service_start"))
+        if get("service_start") and not ss_ok:
+            review_flags.append(f"Service start \"{get('service_start')}\" not recognized - left blank")
+            svc_start = None
         svc_end, se_ok = _standardize_date(get("service_end"))
+        if get("service_end") and not se_ok:
+            review_flags.append(f"Service end \"{get('service_end')}\" not recognized - left blank")
+            svc_end = None
 
         is_duplicate = False
         if ext_id and ext_id.strip().lower() in existing_ext_ids:
             is_duplicate = True
-            flags.append("Possible duplicate (matches an existing student ID)")
+            blocking_flags.append("Possible duplicate (matches an existing student ID)")
         elif name and school_id and (name.strip().lower(), school_id) in existing_name_school:
             is_duplicate = True
-            flags.append("Possible duplicate (matches an existing name at this school)")
+            blocking_flags.append("Possible duplicate (matches an existing name at this school)")
 
         # Catch duplicates *within this same file* too (e.g. the same student listed twice
         # by mistake) - the checks above only compare against students already saved in the
         # database, so two identical rows in one upload would otherwise both sail through.
+        # Rows with no matched school fall back to the raw school text for this comparison so
+        # two different unmatched-school students with the same name aren't mistaken for dupes.
         ext_key = ext_id.strip().lower() if ext_id else None
-        name_school_key = (name.strip().lower(), school_id) if (name and school_id) else None
+        school_key_part = school_id if school_id is not None else (f"raw:{school_raw.strip().lower()}" if school_raw else None)
+        name_school_key = (name.strip().lower(), school_key_part) if (name and school_key_part is not None) else None
         if ext_key and ext_key in seen_ext_ids_in_file:
             is_duplicate = True
-            flags.append("Duplicate row within this file (same student ID appears more than once)")
+            blocking_flags.append("Duplicate row within this file (same student ID appears more than once)")
         elif name_school_key and name_school_key in seen_name_school_in_file:
             is_duplicate = True
-            flags.append("Duplicate row within this file (same name/school appears more than once)")
+            blocking_flags.append("Duplicate row within this file (same name/school appears more than once)")
         if ext_key:
             seen_ext_ids_in_file.add(ext_key)
         if name_school_key:
@@ -145,13 +175,13 @@ def _build_preview(ctx, headers, rows):
             freq = float(freq_raw) if freq_raw else 1.0
         except ValueError:
             freq = 1.0
-            flags.append("Sessions per week not a number - defaulted to 1")
+            review_flags.append(f"Sessions per week \"{freq_raw}\" not a number - defaulted to 1, please verify")
         dur_raw = get("duration_minutes")
         try:
             duration = int(float(dur_raw)) if dur_raw else 30
         except ValueError:
             duration = 30
-            flags.append("Duration not a number - defaulted to 30")
+            review_flags.append(f"Duration \"{dur_raw}\" not a number - defaulted to 30, please verify")
 
         gi_raw = get("group_individual").strip().lower()
         group_individual = "group" if gi_raw.startswith("g") else "individual"
@@ -163,10 +193,29 @@ def _build_preview(ctx, headers, rows):
             "eligibility_date": elig, "iep_date": iep, "service_start": svc_start, "service_end": svc_end,
             "provider_raw": provider_raw or None, "provider_id": provider_id,
             "sessions_per_week": freq, "duration_minutes": duration, "group_individual": group_individual,
-            "flags": flags, "is_duplicate": is_duplicate,
-            "will_import": not flags,
+            "flags": blocking_flags + review_flags, "blocking_flags": blocking_flags, "review_flags": review_flags,
+            "is_duplicate": is_duplicate,
+            "will_import": not blocking_flags,
         })
     return {"headers": headers, "column_mapping": mapping, "missing_required_columns": missing_required, "rows": preview_rows}
+
+
+PLACEHOLDER_SCHOOL_NAME = "Needs School Assignment"
+
+
+def _get_or_create_placeholder_school(ctx):
+    """A real, permanent school row used only as a parking spot for imported students whose
+    School column was blank or didn't match anything - so the row can still be created (the
+    database requires every student to belong to some school) without guessing which real
+    school they meant. Reassign them for real from the student's Edit form."""
+    row = ctx.db.execute("SELECT id FROM schools WHERE name=?", (PLACEHOLDER_SCHOOL_NAME,)).fetchone()
+    if row:
+        return row["id"]
+    cur = ctx.db.execute(
+        "INSERT INTO schools (name, code, is_active) VALUES (?,?,1)",
+        (PLACEHOLDER_SCHOOL_NAME, None),
+    )
+    return cur.lastrowid
 
 
 @router.post("/api/imports/roster")
@@ -228,19 +277,28 @@ def approve_import(ctx, params, body):
         raise bad_request("This import has already been decided")
     preview = json.loads(row["preview_json"])
 
+    placeholder_school_id = None  # created lazily, only if a row actually needs it
+
     created, skipped = 0, 0
     for r in preview["rows"]:
-        if not r["will_import"] or not r["school_id"]:
+        if not r["will_import"]:
             skipped += 1
             continue
+        school_id = r["school_id"]
+        if not school_id:
+            if placeholder_school_id is None:
+                placeholder_school_id = _get_or_create_placeholder_school(ctx)
+            school_id = placeholder_school_id
+        review_flags = r.get("review_flags") or []
         ctx.db.execute(
             "INSERT INTO students (student_ext_id,name,school_id,grade,disability,eligibility_date,iep_date,"
             "service_start,service_end,provider_id,supervising_slp_id,sessions_per_week,duration_minutes,"
-            "group_individual,status,comments,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (r["student_ext_id"], r["name"], r["school_id"], r["grade"], r["disability"], r["eligibility_date"],
+            "group_individual,status,comments,import_flags,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (r["student_ext_id"], r["name"], school_id, r["grade"], r["disability"], r["eligibility_date"],
              r["iep_date"], r["service_start"], r["service_end"], r["provider_id"],
              ctx.user_id if ctx.role == "supervising_slp" else None,
-             r["sessions_per_week"], r["duration_minutes"], r["group_individual"], "active", None, now_iso()),
+             r["sessions_per_week"], r["duration_minutes"], r["group_individual"], "active", None,
+             "; ".join(review_flags) or None, now_iso()),
         )
         created += 1
 

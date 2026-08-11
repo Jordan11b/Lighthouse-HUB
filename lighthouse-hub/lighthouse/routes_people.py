@@ -560,6 +560,9 @@ def update_student(ctx, params, body):
             updates.append(f"{f}=?")
             values.append(body[f])
     if updates:
+        # Saving the record counts as "reviewed" - clear any "needs review" note left by a
+        # roster import, whether or not this particular save touched the field it flagged.
+        updates.append("import_flags=NULL")
         values.append(sid)
         ctx.db.execute(f"UPDATE students SET {', '.join(updates)} WHERE id=?", values)
         log(ctx.db, ctx.user_id, "student_updated", "student", sid, body)

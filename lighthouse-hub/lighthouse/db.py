@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS students (
     group_individual TEXT NOT NULL DEFAULT 'individual' CHECK(group_individual IN ('individual','group')),
     status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','inactive','archived')),
     comments TEXT,
+    import_flags TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -306,6 +307,15 @@ def _migrate(conn):
         # Knob Middle School") so roster/schedule spreadsheets can keep using the acronym in
         # their School column while the app shows the real name everywhere.
         conn.execute("ALTER TABLE schools ADD COLUMN code TEXT")
+
+    student_cols = {row["name"] for row in conn.execute("PRAGMA table_info(students)")}
+    if "import_flags" not in student_cols:
+        # Free-text note (e.g. "School not recognized - please assign"; "Provider not set")
+        # left behind when a roster import couldn't fully match a row, so nothing gets left
+        # off the roster just because one field was missing or unrecognized - the row still
+        # gets created, and this is what powers the "needs review" alert on the Students page.
+        # Cleared automatically the next time the record is edited and saved.
+        conn.execute("ALTER TABLE students ADD COLUMN import_flags TEXT")
 
 
 def init_db():
