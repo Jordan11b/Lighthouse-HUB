@@ -83,7 +83,12 @@ def requires_makeup(result):
     return result in MAKEUP_REQUIRED_RESULTS
 
 
-def compliance_status(completed, target):
+def compliance_status(completed, target, has_scheduled_session=True):
+    """For a fully-elapsed (past) month. Only a real numeric shortfall counts as "behind" -
+    a month where the student was never scheduled at all is a scheduling gap, not an
+    attendance failure, so that still takes priority just like in pace_status."""
+    if not has_scheduled_session:
+        return "needs_scheduling"
     if target <= 0:
         return "on_target"
     pct = completed / target
@@ -110,18 +115,29 @@ def elapsed_active_days(service_start, service_end, year, month, as_of=None):
     return (cap - active_start).days + 1
 
 
-def pace_status(completed, target, active_days, elapsed_days):
-    """Status based on progress-to-date within the active period, not the full-month
-    target - a student isn't "behind" on day 3 of a 20-day month just because they
-    haven't hit the whole month's target yet."""
+TWO_WEEK_CHECKPOINT_DAYS = 14
+
+
+def pace_status(completed, target, active_days, elapsed_days, has_scheduled_session=True):
+    """Checkpoint-based status, not a continuous daily proration - a student isn't "behind"
+    just because a few days have passed without a session logged yet.
+
+    - A student with nothing scheduled at all this month can't be judged on attendance -
+      that's a scheduling gap, not a compliance one ("needs_scheduling" takes priority over
+      everything else, and callers should pass has_scheduled_session=False to signal it).
+    - Before the two-week mark of their active period, it's too early to say anything -
+      always "on_target".
+    - From two weeks in through the end of the month, falling short of the halfway point
+      is flagged "at_risk" (a heads-up, not a failure) - there's still time left to catch up.
+    - Only once the month (or their active period within it) has actually finished does
+      falling short of the full target count as "behind" - there's no time left to act.
+    """
+    if not has_scheduled_session:
+        return "needs_scheduling"
     if target <= 0 or active_days <= 0:
         return "on_target"
-    expected_by_now = target * min(1.0, elapsed_days / active_days)
-    if expected_by_now <= 0:
-        return "on_target"
-    pct = completed / expected_by_now
-    if pct >= 1.0:
-        return "on_target"
-    if pct >= 0.7:
-        return "at_risk"
-    return "behind"
+    if elapsed_days >= active_days:
+        return "on_target" if completed >= target else "behind"
+    if elapsed_days >= TWO_WEEK_CHECKPOINT_DAYS:
+        return "on_target" if completed >= (target * 0.5) else "at_risk"
+    return "on_target"

@@ -521,6 +521,7 @@ def get_student(ctx, params, body):
         ).fetchall()
         scheduled = sum(1 for s in sched_rows if s["status"] in ("scheduled", "awaiting_approval"))
         makeup_scheduled = sum(1 for s in sched_rows if s["status"] == "makeup_scheduled")
+        has_scheduled_session = len(sched_rows) > 0
         remaining = max(0, target - completed)
         pct = round(100 * completed / target, 1) if target > 0 else 100.0
         is_current_month = (year, m) == (today.year, today.month)
@@ -529,9 +530,9 @@ def get_student(ctx, params, body):
             status = "not_yet_due"
         elif is_current_month:
             elapsed = comp.elapsed_active_days(row["service_start"], row["service_end"], year, m)
-            status = comp.pace_status(completed, target, active_days, elapsed)
+            status = comp.pace_status(completed, target, active_days, elapsed, has_scheduled_session)
         else:
-            status = comp.compliance_status(completed, target)
+            status = comp.compliance_status(completed, target, has_scheduled_session)
         months_view.append({
             "month": month_prefix, "standard_target": std, "target": target, "is_prorated": is_p,
             "active_days": active_days, "days_in_month": dim,

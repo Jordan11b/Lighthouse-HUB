@@ -51,12 +51,17 @@ def compliance_report(ctx, params, body):
         ).fetchone()["c"]
         provider = ctx.db.execute("SELECT name FROM users WHERE id=?", (s["provider_id"],)).fetchone()
         school = ctx.db.execute("SELECT name FROM schools WHERE id=?", (s["school_id"],)).fetchone()
+        has_scheduled_session = ctx.db.execute(
+            "SELECT 1 FROM sessions_sched sc JOIN session_students ss ON ss.session_id=sc.id "
+            "WHERE ss.student_id=? AND substr(sc.session_date,1,7)=? LIMIT 1",
+            (s["id"], month_prefix),
+        ).fetchone() is not None
         is_current = (year, month) == (now.year, now.month)
         if is_current:
             elapsed = comp.elapsed_active_days(s["service_start"], s["service_end"], year, month)
-            status = comp.pace_status(completed, prorated, active_days, elapsed)
+            status = comp.pace_status(completed, prorated, active_days, elapsed, has_scheduled_session)
         else:
-            status = comp.compliance_status(completed, prorated)
+            status = comp.compliance_status(completed, prorated, has_scheduled_session)
         out.append({
             "student_id": s["id"], "student_name": s["name"],
             "school_name": school["name"] if school else None,

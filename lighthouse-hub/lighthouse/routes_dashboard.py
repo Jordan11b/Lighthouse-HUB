@@ -34,7 +34,8 @@ def _provider_live_status(db, provider_id):
 
 
 def _students_by_status(db, student_ids, year, month):
-    on_target, at_risk, behind = [], [], []
+    on_target, at_risk, behind, needs_scheduling = [], [], [], []
+    month_prefix = f"{year:04d}-{month:02d}"
     for sid in student_ids:
         s = db.execute("SELECT * FROM students WHERE id=?", (sid,)).fetchone()
         if not s or s["status"] != "active":
@@ -42,17 +43,21 @@ def _students_by_status(db, student_ids, year, month):
         std, prorated, active_days, dim, is_p = comp.prorated_target(
             s["sessions_per_week"], s["service_start"], s["service_end"], year, month
         )
-        month_prefix = f"{year:04d}-{month:02d}"
         completed = db.execute(
             "SELECT COUNT(*) c FROM attendance a JOIN sessions_sched s ON a.session_id=s.id "
             "WHERE a.student_id=? AND substr(s.session_date,1,7)=? AND a.result='completed'",
             (sid, month_prefix),
         ).fetchone()["c"]
+        has_scheduled_session = db.execute(
+            "SELECT 1 FROM sessions_sched s JOIN session_students ss ON ss.session_id=s.id "
+            "WHERE ss.student_id=? AND substr(s.session_date,1,7)=? LIMIT 1",
+            (sid, month_prefix),
+        ).fetchone() is not None
         elapsed = comp.elapsed_active_days(s["service_start"], s["service_end"], year, month)
-        status = comp.pace_status(completed, prorated, active_days, elapsed)
+        status = comp.pace_status(completed, prorated, active_days, elapsed, has_scheduled_session)
         entry = {"student_id": sid, "name": s["name"], "target": prorated, "completed": completed, "status": status}
-        {"on_target": on_target, "at_risk": at_risk, "behind": behind}[status].append(entry)
-    return on_target, at_risk, behind
+        {"on_target": on_target, "at_risk": at_risk, "behind": behind, "needs_scheduling": needs_scheduling}[status].append(entry)
+    return on_target, at_risk, behind, needs_scheduling
 
 
 @router.get("/api/dashboard")
@@ -89,7 +94,7 @@ def dashboard(ctx, params, body):
         from .routes_people import student_visible_to
         student_ids = [s["id"] for s in all_students if student_visible_to(ctx, s)]
 
-    on_target, at_risk, behind = _students_by_status(ctx.db, student_ids, year, month)
+    on_target, at_risk, behind, needs_scheduling = _students_by_status(ctx.db, student_ids, year, month)
 
     makeups = ctx.db.execute(
         f"SELECT * FROM makeup_queue WHERE status='open' AND responsible_provider_id IN ({placeholders})",
@@ -109,8 +114,10 @@ def dashboard(ctx, params, body):
     resp = {
         "today": {"date": today, **counts},
         "students_on_target": len(on_target), "students_at_risk": len(at_risk), "students_behind": len(behind),
+        "students_needs_scheduling": len(needs_scheduling),
         "students_behind_list": behind[:25],
         "students_at_risk_list": at_risk[:25],
+        "students_needs_scheduling_list": needs_scheduling[:25],
         "outstanding_makeups": len(makeups),
         "pending_approvals": len(pending_approvals),
         "upcoming_iep_eligibility": upcoming_iep[:25],
