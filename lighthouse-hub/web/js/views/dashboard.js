@@ -24,6 +24,7 @@ export async function renderDashboard(content) {
       <div class="card"><h3>Students at risk</h3><div class="stat" style="color:var(--warn)">${d.students_at_risk}</div></div>
       <div class="card"><h3>Students behind</h3><div class="stat" style="color:var(--danger)">${d.students_behind}</div></div>
       <div class="card"><h3>Outstanding makeups</h3><div class="stat">${d.outstanding_makeups}</div></div>
+      <div class="card"><h3>Needs scheduling</h3><div class="stat" style="color:var(--blue)">${d.students_needs_scheduling}</div><div class="stat-sub">no session set up yet this month</div></div>
     </div>
 
     ${CURRENT_USER.role === "provider" ? `
@@ -56,6 +57,18 @@ export async function renderDashboard(content) {
           <tr class="clickable" data-goto="#/students/${s.student_id}">
             <td>${s.name}</td><td>${s.completed} / ${s.target}</td><td>${pacePill(s.status)}</td>
           </tr>`).join("") || `<tr><td colspan="3" class="empty">Nobody is behind pace right now.</td></tr>`}
+      </tbody>
+    </table></div>
+
+    <div class="section-title"><h3>Students needing scheduling this month</h3></div>
+    <p class="small">Nothing's been scheduled for these students yet this month - that's a scheduling gap, not an attendance problem, so they're kept separate from "behind."</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Student</th><th>Target this month</th><th>Status</th></tr></thead>
+      <tbody>
+        ${d.students_needs_scheduling_list.map(s => `
+          <tr class="clickable" data-goto="#/students/${s.student_id}">
+            <td>${s.name}</td><td>${s.target}</td><td>${pacePill(s.status)}</td>
+          </tr>`).join("") || `<tr><td colspan="3" class="empty">Everyone active has at least something scheduled this month.</td></tr>`}
       </tbody>
     </table></div>
 
